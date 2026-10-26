@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>加法與算式綜合練習板 (完賽獎勵版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 嚴格防捲軸與防縮放，確保平板體驗 */
+        body, html {
+            margin: 0; padding: 0;
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+            background-color: #F8FAFC;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            touch-action: none; 
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .tab-content { display: none; flex-direction: column; height: 100%; width: 100%; }
+        .tab-content.active { display: flex; }
+
+        /* 積木容器設定：自動換行，靠左上對齊 */
+        .blocks-container {
+            display: flex; flex-wrap: wrap; align-content: flex-start; justify-content: flex-start;
+            gap: 6px; width: 100%; height: 100%; overflow: hidden; padding: 4px;
+        }
+
+        /* 3D 立體積木設計 */
+        .block-item {
+            width: clamp(28px, 6vw, 45px);
+            aspect-ratio: 1;
+            position: relative;
+            border-radius: 4px;
+            box-shadow: inset -2px -2px 6px rgba(0,0,0,0.15), 2px 2px 4px rgba(0,0,0,0.3);
+            z-index: 10;
+            flex-shrink: 0;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
+        .block-item::before {
+            content: ''; position: absolute; top: -20%; left: 20%; width: 60%; height: 20%;
+            border-radius: 3px 3px 0 0;
+            box-shadow: inset -1px 0px 3px rgba(0,0,0,0.1);
+        }
+
+        .block-yellow { background-color: #FACC15; border: 2px solid #EAB308; }
+        .block-yellow::before { background-color: #FACC15; border: 2px solid #EAB308; border-bottom: none; }
+        
+        .block-blue { background-color: #60A5FA; border: 2px solid #3B82F6; }
+        .block-blue::before { background-color: #60A5FA; border: 2px solid #3B82F6; border-bottom: none; }
+
+        .bg-zone-yellow { background-color: #FEF08A; }
+        .bg-zone-blue { background-color: #BFDBFE; }
+        .bg-zone-green { background-color: #BBF7D0; }
+
+        /* 動畫 */
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes bounceIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        /* 算式輸入框 */
+        .formula-box { transition: all 0.2s; cursor: pointer; }
+        .formula-box.selected { transform: scale(1.15); box-shadow: 0 0 0 4px #F59E0B, 0 8px 15px rgba(0,0,0,0.2); z-index: 20; border-color: #F59E0B; }
+        .formula-box.locked { background-color: #E2E8F0; cursor: not-allowed; opacity: 0.8; }
+        
+        /* 數字鍵盤按鈕特效 */
+        .numpad-btn { box-shadow: 0 4px 0 #CBD5E1; transition: all 0.1s; }
+        .numpad-btn:active:not(:disabled) { box-shadow: 0 0 0 #CBD5E1; transform: translateY(4px); }
+        .numpad-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; transform: none; }
+
+        /* 彩帶畫布 */
+        #confetti-canvas { pointer-events: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- 頂部控制列 (約 10vh) -->
+    <div class="h-[10vh] bg-white shadow-md flex items-center justify-between px-3 sm:px-6 shrink-0 relative z-20 border-b border-gray-200">
+        <!-- 頁籤 -->
+        <div class="flex gap-2 sm:gap-4 h-full pt-2 items-end">
+            <button onclick="switchTab('op')" id="nav-op" class="px-3 sm:px-8 py-2 sm:py-3 rounded-t-xl font-bold text-lg sm:text-2xl transition-colors bg-indigo-600 text-white shadow-inner">操作練習</button>
+            <button onclick="switchTab('eq')" id="nav-eq" class="px-3 sm:px-8 py-2 sm:py-3 rounded-t-xl font-bold text-lg sm:text-2xl transition-colors bg-gray-200 text-gray-500">擺算式</button>
+        </div>
+        
+        <!-- 星星進度與設定 -->
+        <div class="flex items-center gap-4">
+            <div id="star-tracker" class="text-2xl sm:text-4xl tracking-widest drop-shadow-md"></div>
+            <button onclick="openSettings()" class="bg-gray-100 hover:bg-gray-200 p-2 sm:p-3 rounded-full shadow border-2 border-gray-300 active:scale-95 text-xl sm:text-2xl">⚙️</button>
+        </div>
+    </div>
+
+    <!-- ==================== TAB 1: 操作練習 ==================== -->
+    <div id="tab-op" class="tab-content active flex-1 bg-white">
+        <!-- 上方：黃藍區塊 (35%) -->
+        <div class="h-[35%] flex flex-row gap-3 px-4 pt-4 pb-1">
+            <div class="flex-1 bg-zone-yellow border-4 sm:border-8 border-yellow-400 rounded-3xl p-3 flex flex-col shadow-inner relative">
+                <div class="absolute top-1 left-0 right-0 text-center text-yellow-800 font-extrabold text-sm sm:text-lg opacity-50 pointer-events-none">黃色</div>
+                <div id="op-yellow-zone" class="blocks-container pt-6"></div>
+            </div>
+            <div class="flex-1 bg-zone-blue border-4 sm:border-8 border-blue-400 rounded-3xl p-3 flex flex-col shadow-inner relative">
+                <div class="absolute top-1 left-0 right-0 text-center text-blue-800 font-extrabold text-sm sm:text-lg opacity-50 pointer-events-none">藍色</div>
+                <div id="op-blue-zone" class="blocks-container pt-6"></div>
+            </div>
+        </div>
+        
+        <!-- 中間：按鈕區 (15%) -->
+        <div class="h-[15%] flex justify-center items-center relative z-20 px-4">
+            <button id="op-btn-merge" onclick="triggerCombine('op')" class="bg-indigo-600 text-white text-3xl sm:text-5xl font-black py-2 sm:py-4 px-12 sm:px-20 rounded-full shadow-[0_6px_0_#3730A3] active:shadow-[0_0px_0_#3730A3] active:translate-y-2 transition-all border-4 border-indigo-400">
+                合起來！
+            </button>
+            <button id="op-btn-next" onclick="nextQuestion()" class="hidden bg-green-500 text-white text-3xl sm:text-5xl font-black py-2 sm:py-4 px-12 sm:px-20 rounded-full shadow-[0_6px_0_#15803D] active:shadow-[0_0px_0_#15803D] active:translate-y-2 transition-all border-4 border-green-300 animate-bounce-in">
+                下一題 ➔
+            </button>
+            <div id="op-result-text" class="hidden absolute w-full text-center pointer-events-none mb-24">
+                <span class="inline-block bg-white/95 backdrop-blur px-6 py-2 rounded-2xl border-4 border-green-500 shadow-xl text-3xl sm:text-5xl font-black text-gray-800 animate-bounce-in">
+                    總共有 <span id="op-total-num" class="text-red-600 text-5xl sm:text-6xl mx-1"></span> 個
+                </span>
+            </div>
+        </div>
+        
+        <!-- 下方：綠色區塊 (50%) -->
+        <div class="h-[50%] px-4 pb-4 pt-1">
+            <div class="w-full h-full bg-zone-green border-4 sm:border-8 border-green-500 rounded-3xl p-3 flex flex-col shadow-inner relative">
+                <div class="absolute top-1 left-0 right-0 text-center text-green-800 font-extrabold text-sm sm:text-lg opacity-50 pointer-events-none">綠色(全部)</div>
+                <div id="op-green-zone" class="blocks-container pt-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TAB 2: 擺算式 ==================== -->
+    <div id="tab-eq" class="tab-content flex-1 bg-white">
+        
+        <!-- 上部視覺區：黃藍綠 & 合起來按鈕 (40%) -->
+        <div class="h-[40%] flex flex-col p-2 sm:p-4 bg-gray-50 border-b-4 border-gray-200">
+            <!-- 左右分離區 -->
+            <div class="flex-1 flex gap-2 h-1/2">
+                <div class="flex-1 bg-zone-yellow border-4 border-yellow-400 rounded-2xl p-2 relative shadow-inner">
+                    <div id="eq-yellow-zone" class="blocks-container"></div>
+                </div>
+                <div class="flex-1 bg-zone-blue border-4 border-blue-400 rounded-2xl p-2 relative shadow-inner">
+                    <div id="eq-blue-zone" class="blocks-container"></div>
+                </div>
+            </div>
+            
+            <!-- 中間小按鈕 -->
+            <div class="h-10 sm:h-14 flex justify-center items-center -my-2 z-10 relative">
+                <button id="eq-btn-merge" onclick="triggerCombine('eq')" class="bg-indigo-500 text-white font-bold py-1 px-6 rounded-full shadow-[0_4px_0_#312E81] active:translate-y-1 active:shadow-none border-2 border-indigo-300 text-lg sm:text-xl">
+                    👀 點我合起來
+                </button>
+            </div>
+            
+            <!-- 下方綠色區 -->
+            <div class="flex-1 h-1/2 w-full mx-auto bg-zone-green border-4 border-green-500 rounded-2xl p-2 relative shadow-inner">
+                <div id="eq-green-zone" class="blocks-container"></div>
+            </div>
+        </div>
+        
+        <!-- 中部：算式輸入框 (15%) -->
+        <div class="h-[15%] flex justify-center items-center gap-1 sm:gap-4 px-2 bg-white">
+            <div id="eq-box-0" onclick="selectEqBox(0)" class="formula-box w-14 h-16 sm:w-24 sm:h-28 bg-yellow-50 border-4 sm:border-8 border-yellow-400 rounded-xl flex items-center justify-center text-3xl sm:text-5xl font-black text-gray-800"></div>
+            <div id="eq-box-1" onclick="selectEqBox(1)" class="formula-box w-10 h-12 sm:w-16 sm:h-20 bg-gray-50 border-4 sm:border-8 border-gray-300 rounded-xl flex items-center justify-center text-2xl sm:text-4xl font-black text-gray-600"></div>
+            <div id="eq-box-2" onclick="selectEqBox(2)" class="formula-box w-14 h-16 sm:w-24 sm:h-28 bg-blue-50 border-4 sm:border-8 border-blue-400 rounded-xl flex items-center justify-center text-3xl sm:text-5xl font-black text-gray-800"></div>
+            <div id="eq-box-3" onclick="selectEqBox(3)" class="formula-box w-10 h-12 sm:w-16 sm:h-20 bg-gray-50 border-4 sm:border-8 border-gray-300 rounded-xl flex items-center justify-center text-2xl sm:text-4xl font-black text-gray-600"></div>
+            <div id="eq-box-4" onclick="selectEqBox(4)" class="formula-box w-14 h-16 sm:w-24 sm:h-28 bg-green-50 border-4 sm:border-8 border-green-500 rounded-xl flex items-center justify-center text-3xl sm:text-5xl font-black text-gray-800"></div>
+        </div>
+        
+        <!-- 下部：數字鍵盤區 (45%) -->
+        <div class="h-[45%] bg-gray-200 p-3 sm:p-5 border-t-4 border-gray-300 relative">
+            <!-- 鍵盤本身 -->
+            <div id="keyboard-grid" class="grid grid-cols-4 gap-2 sm:gap-4 h-full">
+                <button onclick="typeKey('1')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">1</button>
+                <button onclick="typeKey('2')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">2</button>
+                <button onclick="typeKey('3')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">3</button>
+                <button onclick="typeKey('+')" id="key-plus" class="numpad-btn bg-yellow-200 rounded-xl text-3xl sm:text-5xl font-black text-gray-800">➕</button>
+                
+                <button onclick="typeKey('4')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">4</button>
+                <button onclick="typeKey('5')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">5</button>
+                <button onclick="typeKey('6')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">6</button>
+                <button onclick="typeKey('=')" id="key-equal" class="numpad-btn bg-blue-200 rounded-xl text-3xl sm:text-5xl font-black text-gray-800">🟰</button>
+                
+                <button onclick="typeKey('7')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">7</button>
+                <button onclick="typeKey('8')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">8</button>
+                <button onclick="typeKey('9')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">9</button>
+                <button onclick="typeKey('backspace')" class="numpad-btn bg-red-100 rounded-xl text-3xl sm:text-5xl font-black text-red-600">⌫</button>
+                
+                <div class="col-span-1"></div>
+                <button onclick="typeKey('0')" class="numpad-btn bg-white rounded-xl text-3xl sm:text-5xl font-black text-gray-800">0</button>
+                <div class="col-span-2"></div>
+            </div>
+
+            <!-- 成功後的「下一題」遮罩覆蓋鍵盤 -->
+            <div id="eq-success-overlay" class="absolute inset-0 bg-gray-200/90 backdrop-blur-sm hidden flex-col justify-center items-center z-30">
+                <button onclick="nextQuestion()" class="bg-green-500 text-white text-4xl sm:text-6xl font-black py-4 sm:py-6 px-16 sm:px-24 rounded-full shadow-[0_8px_0_#15803D] active:shadow-[0_0px_0_#15803D] active:translate-y-2 transition-all border-4 border-green-300 animate-bounce-in">
+                    下一題 ➔
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 設定 Modal ==================== -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/70 z-50 hidden flex justify-center items-center backdrop-blur-sm">
+        <div class="bg-white p-6 sm:p-8 rounded-3xl w-11/12 max-w-md border-4 border-gray-300 shadow-2xl">
+            <h2 class="text-3xl font-black text-center mb-6 text-gray-800 border-b-2 pb-4">老師專用設定</h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between bg-purple-50 p-4 rounded-xl border-2 border-purple-200">
+                    <label class="text-xl font-bold text-purple-900">總和最大值</label>
+                    <input type="number" id="input-max" min="2" max="30" class="w-20 text-2xl text-center border-2 border-purple-400 rounded-xl p-1 font-bold" value="10">
+                </div>
+                <div class="flex items-center justify-between bg-yellow-50 p-4 rounded-xl border-2 border-yellow-200">
+                    <label class="text-xl font-bold text-yellow-900">完成幾題過關？</label>
+                    <input type="number" id="input-stars" min="1" max="10" class="w-20 text-2xl text-center border-2 border-yellow-400 rounded-xl p-1 font-bold" value="5">
+                </div>
+                <div class="flex items-center justify-between bg-blue-50 p-4 rounded-xl border-2 border-blue-200 cursor-pointer" onclick="document.getElementById('input-manual-sym').click()">
+                    <label class="text-lg font-bold text-blue-900">讓學生自己填 ➕ 與 🟰</label>
+                    <input type="checkbox" id="input-manual-sym" class="w-6 h-6 text-blue-600 rounded">
+                </div>
+            </div>
+            <div class="mt-6 flex gap-4">
+                <button onclick="closeSettings()" class="flex-1 bg-gray-200 text-gray-700 text-xl font-bold py-3 rounded-2xl active:scale-95">取消</button>
+                <button onclick="applySettings()" class="flex-1 bg-indigo-600 text-white text-xl font-bold py-3 rounded-2xl shadow-lg active:scale-95">儲存並重設</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 恭喜過關 Modal ==================== -->
+    <div id="success-modal" class="fixed inset-0 bg-yellow-400/95 z-[60] hidden flex-col justify-center items-center">
+        <h1 class="text-6xl sm:text-8xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.3)] animate-bounce-in mb-10 tracking-widest text-center">
+            恭喜完成！<br>🌟🌟🌟
+        </h1>
+        <button onclick="resetGame()" class="bg-white text-yellow-600 text-4xl sm:text-5xl font-black py-4 px-12 rounded-full shadow-[0_8px_0_#D97706] active:shadow-[0_0px_0_#D97706] active:translate-y-2 transition-all border-4 border-yellow-100">
+            再玩一次
+        </button>
+    </div>
+
+    <script>
+        // === 音效系統 ===
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        function initAudio() { if (!audioCtx) audioCtx = new AudioContext(); if (audioCtx.state === 'suspended') audioCtx.resume(); }
+        
+        function playSound(type) {
+            initAudio();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            
+            if (type === 'click') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'success') {
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                notes.forEach((freq, i) => {
+                    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+                    o.type = 'triangle'; o.frequency.value = freq;
+                    o.connect(g); g.connect(audioCtx.destination);
+                    const time = audioCtx.currentTime + (i * 0.1);
+                    g.gain.setValueAtTime(0, time); g.gain.linearRampToValueAtTime(0.3, time + 0.05);
+                    g.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+                    o.start(time); o.stop(time + 0.5);
+                });
+            } else if (type === 'cheer') {
+                // 模擬歡呼/和弦
+                [440, 554, 659, 880].forEach(freq => {
+                    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+                    o.type = 'square'; o.frequency.value = freq;
+                    o.connect(g); g.connect(audioCtx.destination);
+                    g.gain.setValueAtTime(0, audioCtx.currentTime);
+                    g.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.1);
+                    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 2);
+                    o.start(); o.stop(audioCtx.currentTime + 2);
+                });
+            }
+        }
+
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'zh-TW'; u.rate = 0.85;
+                window.speechSynthesis.speak(u);
+            }
+        }
+
+        // === 彩帶系統 ===
+        const canvas = document.getElementById('confetti-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = []; let confettiId;
+
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+        function fireConfetti(massive = false) {
+            particles = [];
+            const count = massive ? 300 : 100;
+            const colors = ['#fce18a', '#ff726d', '#b48def', '#f4306d', '#4ade80', '#60a5fa'];
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: canvas.width / 2, y: canvas.height / 2,
+                    r: Math.random() * 8 + 4,
+                    dx: Math.random() * 30 - 15, dy: Math.random() * -20 - 10,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    tilt: Math.floor(Math.random() * 10), tiltAngleInc: (Math.random() * 0.07) + 0.05, tiltAngle: 0
+                });
+            }
+            if (!confettiId) requestAnimationFrame(updateConfetti);
+        }
+
+        function updateConfetti() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let active = false;
+            particles.forEach(p => {
+                p.tiltAngle += p.tiltAngleInc;
+                p.y += (Math.cos(p.tiltAngle) + 1 + p.r / 2) / 2;
+                p.x += Math.sin(p.tiltAngle) * 2;
+                p.dy += 0.3; p.y += p.dy; p.x += p.dx;
+                if (p.y <= canvas.height) active = true;
+                ctx.beginPath(); ctx.lineWidth = p.r; ctx.strokeStyle = p.color;
+                ctx.moveTo(p.x + p.tilt + p.r / 2, p.y); ctx.lineTo(p.x + p.tilt, p.y + p.tilt + p.r / 2); ctx.stroke();
+            });
+            if (active) confettiId = requestAnimationFrame(updateConfetti);
+            else { ctx.clearRect(0, 0, canvas.width, canvas.height); confettiId = null; }
+        }
+
+        // === 遊戲狀態 ===
+        let currentTab = 'op';
+        let maxSum = 10;
+        let targetStars = 5;
+        let currentStars = 0;
+        let manualSymbols = false;
+        
+        let valA = 0, valB = 0;
+        let eqValues = ['', '', '', '', ''];
+        let selectedEqBox = 0;
+        let isAnimating = false;
+
+        document.body.addEventListener('click', initAudio, { once: true });
+
+        // === 星星與進度 ===
+        function updateStarsUI() {
+            const tracker = document.getElementById('star-tracker');
+            let html = '';
+            for(let i=0; i<targetStars; i++) {
+                html += i < currentStars ? '⭐' : '☆';
+            }
+            tracker.innerHTML = html;
+        }
+
+        function nextQuestion() {
+            if(isAnimating) return;
+            playSound('click');
+            currentStars++;
+            updateStarsUI();
+            
+            if(currentStars >= targetStars) {
+                // 完賽
+                document.getElementById('success-modal').classList.remove('hidden');
+                document.getElementById('success-modal').classList.add('flex');
+                playSound('cheer');
+                fireConfetti(true);
+            } else {
+                generateProblem();
+            }
+        }
+
+        function resetGame() {
+            playSound('click');
+            document.getElementById('success-modal').classList.add('hidden');
+            document.getElementById('success-modal').classList.remove('flex');
+            currentStars = 0;
+            updateStarsUI();
+            generateProblem();
+        }
+
+        // === 介面導航與設定 ===
+        function switchTab(tab) {
+            if(isAnimating) return;
+            playSound('click');
+            currentTab = tab;
+            document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            
+            document.getElementById('nav-op').className = tab === 'op' ? "px-3 sm:px-8 py-2 sm:py-3 rounded-t-xl font-bold text-lg sm:text-2xl transition-colors bg-indigo-600 text-white shadow-inner" : "px-3 sm:px-8 py-2 sm:py-3 rounded-t-xl font-bold text-lg sm:text-2xl transition-colors bg-gray-200 text-gray-500 hover:bg-gray-300";
+            document.getElementById('nav-eq').className = tab === 'eq' ? "px-3 sm:px-8 py-2 sm:py-3 rounded-t-xl font-bold text-lg sm:text-2xl transition-colors bg-indigo-600 text-white shadow-inner" : "px-3 sm:px-8 py-2 sm:py-3 rounded-t-xl font-bold text-lg sm:text-2xl transition-colors bg-gray-200 text-gray-500 hover:bg-gray-300";
+            
+            generateProblem();
+        }
+
+        function openSettings() {
+            playSound('click');
+            document.getElementById('settings-modal').classList.remove('hidden');
+            document.getElementById('settings-modal').classList.add('flex');
+            document.getElementById('input-max').value = maxSum;
+            document.getElementById('input-stars').value = targetStars;
+            document.getElementById('input-manual-sym').checked = manualSymbols;
+        }
+
+        function closeSettings() {
+            playSound('click');
+            document.getElementById('settings-modal').classList.add('hidden');
+            document.getElementById('settings-modal').classList.remove('flex');
+        }
+
+        function applySettings() {
+            maxSum = Math.max(2, parseInt(document.getElementById('input-max').value) || 10);
+            targetStars = Math.max(1, parseInt(document.getElementById('input-stars').value) || 5);
+            manualSymbols = document.getElementById('input-manual-sym').checked;
+            closeSettings();
+            resetGame();
+        }
+
+        // === 核心邏輯 ===
+        function createBlocks(containerId, count, colorClass) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            for(let i = 0; i < count; i++) {
+                const b = document.createElement('div');
+                b.className = `block-item ${colorClass}`;
+                b.style.animationDelay = `${i * 0.03}s`;
+                container.appendChild(b);
+            }
+        }
+
+        function generateProblem() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            cancelAnimationFrame(confettiId); confettiId = null;
+
+            const targetTotal = Math.floor(Math.random() * (maxSum - 1)) + 2; 
+            valA = Math.floor(Math.random() * (targetTotal - 1)) + 1; 
+            valB = targetTotal - valA; 
+
+            if(currentTab === 'op') initOpTab();
+            else initEqTab();
+        }
+
+        // === TAB 1: 操作練習 ===
+        function initOpTab() {
+            document.getElementById('op-yellow-zone').innerHTML = ''; 
+            document.getElementById('op-blue-zone').innerHTML = ''; 
+            document.getElementById('op-green-zone').innerHTML = '';
+            document.getElementById('op-result-text').classList.add('hidden');
+            
+            document.getElementById('op-btn-merge').style.display = 'block';
+            document.getElementById('op-btn-next').classList.add('hidden');
+
+            createBlocks('op-yellow-zone', valA, 'block-yellow');
+            createBlocks('op-blue-zone', valB, 'block-blue');
+        }
+
+        // === TAB 2: 擺算式 ===
+        function initEqTab() {
+            document.getElementById('eq-yellow-zone').innerHTML = '';
+            document.getElementById('eq-blue-zone').innerHTML = '';
+            document.getElementById('eq-green-zone').innerHTML = '';
+            
+            document.getElementById('eq-btn-merge').style.display = 'block';
+            document.getElementById('eq-btn-merge').disabled = false;
+            document.getElementById('eq-btn-merge').innerHTML = '👀 點我合起來';
+            document.getElementById('eq-btn-merge').className = "bg-indigo-500 text-white font-bold py-1 px-6 rounded-full shadow-[0_4px_0_#312E81] active:translate-y-1 active:shadow-none border-2 border-indigo-300 text-lg sm:text-xl";
+
+            createBlocks('eq-yellow-zone', valA, 'block-yellow');
+            createBlocks('eq-blue-zone', valB, 'block-blue');
+
+            document.getElementById('eq-success-overlay').classList.add('hidden');
+            document.getElementById('eq-success-overlay').classList.remove('flex');
+
+            // 準備框線
+            eqValues = ['', '', '', '', ''];
+            for(let i=0; i<5; i++) {
+                document.getElementById(`eq-box-${i}`).textContent = '';
+                document.getElementById(`eq-box-${i}`).classList.remove('locked', 'selected');
+            }
+
+            // 符號設定
+            const keyPlus = document.getElementById('key-plus');
+            const keyEqual = document.getElementById('key-equal');
+            if(!manualSymbols) {
+                eqValues[1] = '+'; eqValues[3] = '=';
+                document.getElementById('eq-box-1').textContent = '+'; document.getElementById('eq-box-1').classList.add('locked');
+                document.getElementById('eq-box-3').textContent = '='; document.getElementById('eq-box-3').classList.add('locked');
+                keyPlus.disabled = true; keyEqual.disabled = true;
+            } else {
+                keyPlus.disabled = false; keyEqual.disabled = false;
+            }
+
+            selectEqBox(0);
+        }
+
+        // === 動畫合併邏輯 (共用) ===
+        function triggerCombine(tab) {
+            if(isAnimating) return;
+            isAnimating = true;
+            playSound('click');
+
+            const prefix = tab === 'op' ? 'op' : 'eq';
+            const btnMerge = document.getElementById(`${prefix}-btn-merge`);
+            const targetZone = document.getElementById(`${prefix}-green-zone`);
+            const items = document.querySelectorAll(`#${prefix}-yellow-zone .block-item, #${prefix}-blue-zone .block-item`);
+            
+            if(tab === 'op') btnMerge.style.display = 'none';
+            else {
+                btnMerge.disabled = true;
+                btnMerge.innerHTML = '已合併';
+                btnMerge.className = "bg-gray-400 text-white font-bold py-1 px-6 rounded-full border-2 border-gray-500 text-lg sm:text-xl cursor-not-allowed";
+            }
+
+            // FLIP
+            const firstPos = Array.from(items).map(c => c.getBoundingClientRect());
+            items.forEach(c => targetZone.appendChild(c));
+            const lastPos = Array.from(items).map(c => c.getBoundingClientRect());
+
+            items.forEach((c, i) => {
+                const dx = firstPos[i].left - lastPos[i].left;
+                const dy = firstPos[i].top - lastPos[i].top;
+                c.style.transform = `translate(${dx}px, ${dy}px)`;
+                c.style.transition = 'none';
+                c.style.animation = 'none';
+            });
+
+            document.body.offsetHeight; // Reflow
+
+            items.forEach(c => {
+                c.style.transition = 'transform 0.8s cubic-bezier(0.25, 1, 0.5, 1)';
+                c.style.transform = 'translate(0, 0)';
+            });
+
+            setTimeout(() => {
+                items.forEach(c => { c.style.transition = 'none'; c.style.transform = 'none'; });
+                
+                if(tab === 'op') {
+                    document.getElementById('op-total-num').textContent = valA + valB;
+                    document.getElementById('op-result-text').classList.remove('hidden');
+                    playSound('success');
+                    speakText(`合起來，總共有 ${valA + valB} 個`);
+                    setTimeout(() => {
+                        document.getElementById('op-btn-next').classList.remove('hidden');
+                        isAnimating = false;
+                    }, 1000);
+                } else {
+                    playSound('click');
+                    isAnimating = false;
+                }
+            }, 850);
+        }
+
+        // === 算式鍵盤邏輯 ===
+        function selectEqBox(index) {
+            if(!manualSymbols && (index === 1 || index === 3)) return;
+            playSound('click');
+            for(let i=0; i<5; i++) document.getElementById(`eq-box-${i}`).classList.remove('selected');
+            selectedEqBox = index;
+            document.getElementById(`eq-box-${index}`).classList.add('selected');
+        }
+
+        function typeKey(key) {
+            playSound('click');
+            if(key === 'backspace') {
+                eqValues[selectedEqBox] = eqValues[selectedEqBox].slice(0, -1);
+            } else if (key === '+' || key === '=') {
+                if(selectedEqBox === 1 || selectedEqBox === 3) {
+                    eqValues[selectedEqBox] = key;
+                }
+            } else {
+                // 數字鍵：最多兩位數，只能填在 0, 2, 4
+                if(selectedEqBox === 0 || selectedEqBox === 2 || selectedEqBox === 4) {
+                    if(eqValues[selectedEqBox].length < 2) {
+                        eqValues[selectedEqBox] += key;
+                    }
+                }
+            }
+            
+            // 顯示
+            document.getElementById(`eq-box-${selectedEqBox}`).textContent = eqValues[selectedEqBox];
+            
+            // 如果輸入了符號，自動跳下一格
+            if (key === '+' || key === '=') autoAdvanceBox();
+            
+            checkEquation();
+        }
+
+        function autoAdvanceBox() {
+            let next = selectedEqBox + 1;
+            while(next < 5) {
+                if(!manualSymbols && (next === 1 || next === 3)) next++;
+                else { selectEqBox(next); return; }
+            }
+        }
+
+        function checkEquation() {
+            const v0 = parseInt(eqValues[0]);
+            const sym1 = eqValues[1];
+            const v2 = parseInt(eqValues[2]);
+            const sym2 = eqValues[3];
+            const v4 = parseInt(eqValues[4]);
+
+            if (v0 === valA && sym1 === '+' && v2 === valB && sym2 === '=' && v4 === (valA + valB)) {
+                // 答對了
+                playSound('success');
+                fireConfetti();
+                speakText(`很棒，答對了！ ${valA} 加 ${valB} 等於 ${valA + valB}`);
+                
+                // 顯示巨大的下一題按鈕遮罩
+                for(let i=0; i<5; i++) document.getElementById(`eq-box-${i}`).classList.remove('selected');
+                document.getElementById('eq-success-overlay').classList.remove('hidden');
+                document.getElementById('eq-success-overlay').classList.add('flex');
+            }
+        }
+
+        window.onload = () => {
+            updateStarsUI();
+            generateProblem();
+        };
+    </script>
+</body>
+</html>
