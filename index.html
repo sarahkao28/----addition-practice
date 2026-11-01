@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>加法與算式綜合練習</title>
+    <title>加法與算式綜合練習板 (完賽獎勵版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* 嚴格防捲軸與防縮放，確保平板體驗 */
+        * {
+            touch-action: manipulation; /* 防止 iPad 雙擊放大 */
+            -webkit-tap-highlight-color: transparent;
+        }
         body, html {
             margin: 0; padding: 0;
             width: 100vw; height: 100vh;
@@ -68,8 +72,13 @@
 
         /* 算式輸入框 */
         .formula-box { transition: all 0.2s; cursor: pointer; }
-        .formula-box.selected { transform: scale(1.15); box-shadow: 0 0 0 4px #F59E0B, 0 8px 15px rgba(0,0,0,0.2); z-index: 20; border-color: #F59E0B; }
         .formula-box.locked { background-color: #E2E8F0; cursor: not-allowed; opacity: 0.8; }
+        
+        /* 個別顏色的選中狀態 (對應各區塊顏色) */
+        .formula-box.selected-yellow { transform: scale(1.15); box-shadow: 0 0 0 4px #FACC15, 0 8px 15px rgba(0,0,0,0.2); z-index: 20; border-color: #FACC15; }
+        .formula-box.selected-blue { transform: scale(1.15); box-shadow: 0 0 0 4px #60A5FA, 0 8px 15px rgba(0,0,0,0.2); z-index: 20; border-color: #60A5FA; }
+        .formula-box.selected-green { transform: scale(1.15); box-shadow: 0 0 0 4px #4ADE80, 0 8px 15px rgba(0,0,0,0.2); z-index: 20; border-color: #4ADE80; }
+        .formula-box.selected-gray { transform: scale(1.15); box-shadow: 0 0 0 4px #9CA3AF, 0 8px 15px rgba(0,0,0,0.2); z-index: 20; border-color: #9CA3AF; }
         
         /* 數字鍵盤按鈕特效 */
         .numpad-btn { box-shadow: 0 4px 0 #CBD5E1; transition: all 0.1s; }
@@ -411,6 +420,10 @@
             playSound('click');
             document.getElementById('settings-modal').classList.add('hidden');
             document.getElementById('settings-modal').classList.remove('flex');
+            
+            // 修復 iPad 虛擬鍵盤收起後，畫面被往上推卡住的問題
+            window.scrollTo(0, 0);
+            document.body.scrollTop = 0;
         }
 
         function applySettings() {
@@ -480,7 +493,7 @@
             eqValues = ['', '', '', '', ''];
             for(let i=0; i<5; i++) {
                 document.getElementById(`eq-box-${i}`).textContent = '';
-                document.getElementById(`eq-box-${i}`).classList.remove('locked', 'selected');
+                document.getElementById(`eq-box-${i}`).classList.remove('locked', 'selected-yellow', 'selected-blue', 'selected-green', 'selected-gray');
             }
 
             // 符號設定
@@ -559,9 +572,20 @@
         function selectEqBox(index) {
             if(!manualSymbols && (index === 1 || index === 3)) return;
             playSound('click');
-            for(let i=0; i<5; i++) document.getElementById(`eq-box-${i}`).classList.remove('selected');
+            
+            // 清除所有選中狀態
+            for(let i=0; i<5; i++) {
+                document.getElementById(`eq-box-${i}`).classList.remove('selected-yellow', 'selected-blue', 'selected-green', 'selected-gray');
+            }
             selectedEqBox = index;
-            document.getElementById(`eq-box-${index}`).classList.add('selected');
+            
+            // 根據點選的格子，套用對應顏色的特效
+            let colorClass = 'selected-gray'; // 預設給符號格子
+            if (index === 0) colorClass = 'selected-yellow';
+            else if (index === 2) colorClass = 'selected-blue';
+            else if (index === 4) colorClass = 'selected-green';
+            
+            document.getElementById(`eq-box-${index}`).classList.add(colorClass);
         }
 
         function typeKey(key) {
@@ -611,8 +635,10 @@
                 fireConfetti();
                 speakText(`很棒，答對了！ ${valA} 加 ${valB} 等於 ${valA + valB}`);
                 
-                // 顯示巨大的下一題按鈕遮罩
-                for(let i=0; i<5; i++) document.getElementById(`eq-box-${i}`).classList.remove('selected');
+                // 顯示巨大的下一題按鈕遮罩，並清除選取框光暈
+                for(let i=0; i<5; i++) {
+                    document.getElementById(`eq-box-${i}`).classList.remove('selected-yellow', 'selected-blue', 'selected-green', 'selected-gray');
+                }
                 document.getElementById('eq-success-overlay').classList.remove('hidden');
                 document.getElementById('eq-success-overlay').classList.add('flex');
             }
